@@ -98,13 +98,11 @@ class Database(threading.Thread):
         else:
             raise NameError('There was no SQL to be parsed')
     
-    def fetchall(self, table=None, filters={}, add='', out='raw'):
+    def fetchall(self, table=None, filters={}, add='', out='none'):
         """Fetches all rows from database based on the filters applied. 
         
         Arg [out] specifies what the output should be:
-            None   : do nothing here (simply return)
-            raw    : print it
-            pretty : pretty print it into ascii tables
+            none   : do nothing here (simply return)
 
         """
         if table is not None:
@@ -126,13 +124,11 @@ class Database(threading.Thread):
         else:
             raise NameError('Table not specified!')
     
-    def fetchone(self, table=None, filters={}, out='raw'):
+    def fetchone(self, table=None, filters={}, out='none'):
         """Fetches the first row from database based on the filters applied. 
         
         Arg [out] specifies what the output should be:
-            None   : do nothing here (simply return)
-            raw    : print it
-            pretty : pretty print it into ascii tables
+            none   : do nothing here (simply return)
 
         """
         if table is not None:
@@ -251,10 +247,3 @@ class Database(threading.Thread):
                 return count
         else:
             raise NameError('Table not specified!')
-
-
-# NOTE for testing purposes only
-print '--- Test run ---'
-db = Database('SQLite', 'file.db')
-keys_ = {"field1":"val1", "field2":"val2"}
-print db.count('table1', filters=keys_)
