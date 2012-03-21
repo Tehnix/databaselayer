@@ -5,7 +5,12 @@ try:
     import sqlite3
     SQLITE = True
 except ImportError:
-    SQLITE = False
+    # Fallback for sqlite3
+    try:
+        from pysqlite2 import dbapi2 as sqlite3
+        SQLITE = True
+    except ImportError:
+        SQLITE = False
 try:
     import MySQLdb
     MYSQL = True
@@ -54,11 +59,11 @@ class Database(threading.Thread):
             self.conn = sqlite3.connect(self.dbname)
             self.cursor = self.conn.cursor()
         elif MYSQL and self.dbtype == 'MySQL':
-            self.conn = MySQLdb.connect(host=self.dbserver, db=self.dbname, 
+            self.conn = MySQLdb.connect(host=self.dbserver, db=self.dbname,
                                         user=self.user, passwd=self.passwd)
             self.cursor = self.conn.cursor()
         else:
-            raise 'No database available!'
+            raise NameError('No database available!')
 
     def _keys_to_sql(self, keys={}, sep='AND '):
         """Construct the SQL filter from a dict"""
@@ -73,7 +78,7 @@ class Database(threading.Thread):
         """Convert a dict into an SQL field value pair"""
         fields = []
         values = []
-        self.tempInsertValues = () 
+        self.tempInsertValues = ()
         for field, value in keys.iteritems():
             fields.append(field)
             values.append('?')
@@ -92,14 +97,13 @@ class Database(threading.Thread):
                 self.conn.rollback()
                 return 'SQL Error: %s' % e
             else:
-                self.lastInsertId = self.cursor.lastrowid()
                 self.conn.commit()
                 self.cursor.close()
         else:
             raise NameError('There was no SQL to be parsed')
     
     def fetchall(self, table=None, filters={}, add='', out='none'):
-        """Fetches all rows from database based on the filters applied. 
+        """Fetches all rows from database based on the filters applied.
         
         Arg [out] specifies what the output should be:
             none   : do nothing here (simply return)
@@ -120,12 +124,12 @@ class Database(threading.Thread):
                 del self.tempValues
                 result = self.cursor.fetchall()
                 self.cursor.close()
-                return result 
+                return result
         else:
             raise NameError('Table not specified!')
     
     def fetchone(self, table=None, filters={}, out='none'):
-        """Fetches the first row from database based on the filters applied. 
+        """Fetches the first row from database based on the filters applied.
         
         Arg [out] specifies what the output should be:
             none   : do nothing here (simply return)
@@ -146,16 +150,18 @@ class Database(threading.Thread):
                 del self.tempValues
                 result = self.cursor.fetchone()
                 self.cursor.close()
-                return result 
+                return result
         else:
             raise NameError('Table not specified!')
     
     def insert(self, table=None, data={}):
-        """Inserts specified data into the database""" 
+        """Inserts specified data into the database"""
         if table is not None:
             sql = 'INSERT INTO ' + table + self._keys_to_insert_sql(data)
             self.connect()
             try:
+                print sql
+                print self.tempInsertValues
                 self.cursor.execute(sql, self.tempInsertValues)
             except sqlite3.OperationalError, e:
                 self.conn.rollback()
@@ -163,21 +169,22 @@ class Database(threading.Thread):
                 return 'SQL Error: %s' % e
             else:
                 del self.tempInsertValues
-                self.lastInsertId = self.cursor.lastrowid()
+                #self.lastInsertId = self.cursor.lastrowid()
                 self.conn.commit()
                 self.cursor.close()
+                return True
         else:
             raise NameError('Table not specified!')
     
     def update(self, table=None, data={}, filters={}):
-        """Updates rows where filters apply with, given data""" 
+        """Updates rows where filters apply with, given data"""
         if table is not None:
             values = []
             data = self._keys_to_sql(data, sep=', ')
-            values.append(self.tempValues)
+            values = self.tempValues
             if filters:
                 filters = ' WHERE ' + str(self._keys_to_sql(filters))
-                values.append(self.tempValues)
+                values = values + self.tempValues
             else:
                 filters = ''
             sql = 'UPDATE ' + table + ' SET ' + data + filters
@@ -190,16 +197,17 @@ class Database(threading.Thread):
                 return 'SQL Error: %s' % e
             else:
                 del self.tempValues
-                self.lastInsertId = self.cursor.lastrowid()
+                #self.lastInsertId = self.cursor.lastrowid()
                 self.conn.commit()
                 self.cursor.close()
-        else: 
+                return True
+        else:
             raise NameError('Table not specified!')
     
     def delete(self, table=None, filters={}):
-        """Deletes rows where given filters apply""" 
+        """Deletes rows where given filters apply"""
         if table is not None:
-            filters = self._keys_to_sql(filters) 
+            filters = self._keys_to_sql(filters)
             sql = 'DELETE FROM ' + table + ' WHERE ' + filters
             self.connect()
             try:
@@ -210,9 +218,9 @@ class Database(threading.Thread):
                 return 'SQL Error: %s' % e
             else:
                 del self.tempValues
-                self.lastInsertId = self.cursor.lastrowid()
                 self.conn.commit()
                 self.cursor.close()
+                return True
         else:
             raise NameError('Table not specified!')
     
@@ -229,7 +237,6 @@ class Database(threading.Thread):
         if table is not None:
             # Construct the SQL
             sql = 'SELECT * FROM ' + table + ' WHERE ' + self._keys_to_sql(filters)
-            print sql
             self.connect()
             try:
                 self.cursor.execute(sql, self.tempValues)
