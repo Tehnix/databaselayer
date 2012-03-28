@@ -5,7 +5,7 @@ try:
     import sqlite3
     SQLITE = True
 except ImportError:
-    # Fallback for sqlite3
+    # Fallback for sqlite3 (custom install)
     try:
         from pysqlite2 import dbapi2 as sqlite3
         SQLITE = True
