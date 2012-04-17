@@ -1,6 +1,13 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+"""
+Database abstraction layer. Simplyfies database
+handling a bit.
+
+"""
+
 import threading
+import sys
 try:
     import sqlite3
     SQLITE = True
@@ -18,8 +25,6 @@ except ImportError:
     MYSQL = False
 
 
-
-
 class Database(threading.Thread):
     """Higher level database abstraction layer.
     
@@ -29,23 +34,29 @@ class Database(threading.Thread):
 
     """
     
-    def __init__(self, dbtype=None, dbname=None, dbserver=None,
-                 user=None, passw=None):
+    def __init__(self, dbtype=None, dbname=None, dbserver=None, creden=None):
         """Sets the values for the database instance"""
+        threading.Thread.__init__(self)
         try:
-            dbtype
-            dbname
-        except:
+            self.dbtype = dbtype
+            self.dbname = dbname
+        except NameError:
             raise NameError('No database type or name specified!')
-        self.dbtype = dbtype
-        self.dbname = dbname
-        
         if dbserver is not None:
             self.dbserver = dbserver
-        if user is not None:
-            self.user = user
-        if passw is not None:
-            self.passw = passw
+        try:
+            self.user = creden['username']
+        except KeyError:
+            self.user = None
+        try:
+            self.passwd = creden['password']
+        except KeyError:
+            self.passwd = None
+        self.temp_values = None
+        self.temp_insert_values = None
+        self.last_insert_id = None
+        self.conn = None
+        self.cursor = None
     
     def connect(self):
         """Make the connection based on the type of database.
@@ -65,24 +76,28 @@ class Database(threading.Thread):
         else:
             raise NameError('No database available!')
 
-    def _keys_to_sql(self, keys={}, sep='AND '):
+    def _keys_to_sql(self, keys=None, sep='AND '):
         """Construct the SQL filter from a dict"""
+        if keys is None:
+            keys = {}
         filters = []
-        self.tempValues = ()
+        self.temp_values = ()
         for field, value in keys.items():
             filters.append("%s = ? " % field)
-            self.tempValues = self.tempValues + (value,)
+            self.temp_values = self.temp_values + (value,)
         return sep.join(filters)
     
-    def _keys_to_insert_sql(self, keys={}, sep=', '):
+    def _keys_to_insert_sql(self, keys=None, sep=', '):
         """Convert a dict into an SQL field value pair"""
+        if keys is None:
+            keys = {}
         fields = []
         values = []
-        self.tempInsertValues = ()
+        self.temp_insert_values = ()
         for field, value in keys.items():
             fields.append(field)
             values.append('?')
-            self.tempInsertValues = self.tempInsertValues + (value,)
+            self.temp_insert_values = self.temp_insert_values + (value,)
         fields = '(' + sep.join(fields) + ') '
         values = 'VALUES(' + sep.join(values) + ') '
         return fields + values
@@ -93,144 +108,160 @@ class Database(threading.Thread):
             self.connect()
             try:
                 self.cursor.execute(sql)
-            except sqlite3.OperationalError as e:
+            except sqlite3.OperationalError as error:
                 self.conn.rollback()
-                return 'SQL Error: %s' % e
+                return 'SQL Error: %s' % error
             else:
                 self.conn.commit()
                 self.cursor.close()
         else:
             raise NameError('There was no SQL to be parsed')
     
-    def fetchall(self, table=None, filters={}, add='', out='none'):
+    def fetchall(self, table=None, filters=None, add='', out='none'):
         """Fetches all rows from database based on the filters applied.
         
         Arg [out] specifies what the output should be:
             none   : do nothing here (simply return)
+            output : send output to stdout
 
         """
+        if filters is None:
+            filters = {}
         if table is not None:
             # Construct the SQL
-            sql = 'SELECT * FROM ' + table + ' WHERE ' + self._keys_to_sql(filters)
+            sql = 'SELECT * FROM ' + table + ' WHERE ' +\
+                  self._keys_to_sql(filters)
             self.connect()
             try:
-                self.cursor.execute(sql + add, self.tempValues)
-            except sqlite3.OperationalError as e:
+                self.cursor.execute(sql + add, self.temp_values)
+            except sqlite3.OperationalError as error:
                 self.conn.rollback()
-                del self.tempValues
-                return 'SQL Error: %s' % e
+                del self.temp_values
+                if out == 'output':
+                    write("Error running SQL: %s" % (sql,))
+                return 'SQL Error: %s' % error
             else:
+                if out == 'output':
+                    write("Successfully ran: %s" % (sql,))
                 # Cleanup and return
-                del self.tempValues
+                del self.temp_values
                 result = self.cursor.fetchall()
                 self.cursor.close()
                 return result
         else:
             raise NameError('Table not specified!')
     
-    def fetchone(self, table=None, filters={}, out='none'):
+    def fetchone(self, table=None, filters=None, out='none'):
         """Fetches the first row from database based on the filters applied.
         
         Arg [out] specifies what the output should be:
             none   : do nothing here (simply return)
+            output : send output to stdout
 
         """
+        if filters is None:
+            filters = {}
         if table is not None:
             # Construct the SQL
-            sql = 'SELECT * FROM ' + table + ' WHERE ' + self._keys_to_sql(filters)
+            sql = 'SELECT * FROM ' + table + ' WHERE ' +\
+                  self._keys_to_sql(filters)
             self.connect()
             try:
-                self.cursor.execute(sql, self.tempValues)
-            except sqlite3.OperationalError as e:
-                del self.tempValues
+                self.cursor.execute(sql, self.temp_values)
+            except sqlite3.OperationalError as error:
+                del self.temp_values
                 self.conn.rollback()
-                return 'SQL Error: %s' % e
+                if out == 'output':
+                    write("Error running SQL: %s" % (sql,))
+                return 'SQL Error: %s' % error
             else:
+                if out == 'output':
+                    write("Successfully ran: %s" % (sql,))
                 # Cleanup and return
-                del self.tempValues
+                del self.temp_values
                 result = self.cursor.fetchone()
                 self.cursor.close()
                 return result
         else:
             raise NameError('Table not specified!')
     
-    def insert(self, table=None, data={}):
+    def insert(self, table=None, data=None):
         """Inserts specified data into the database"""
+        if data is None:
+            data = {}
         if table is not None:
             sql = 'INSERT INTO ' + table + self._keys_to_insert_sql(data)
             self.connect()
             try:
                 print(sql)
-                print(self.tempInsertValues)
-                self.cursor.execute(sql, self.tempInsertValues)
-            except sqlite3.OperationalError as e:
+                print(self.temp_insert_values)
+                self.cursor.execute(sql, self.temp_insert_values)
+            except sqlite3.OperationalError as error:
                 self.conn.rollback()
-                del self.tempInsertValues
-                return 'SQL Error: %s' % e
+                del self.temp_insert_values
+                return 'SQL Error: %s' % error
             else:
-                del self.tempInsertValues
-                #self.lastInsertId = self.cursor.lastrowid()
+                del self.temp_insert_values
+                #self.last_insert_id = self.cursor.lastrowid()
                 self.conn.commit()
                 self.cursor.close()
                 return True
         else:
             raise NameError('Table not specified!')
     
-    def update(self, table=None, data={}, filters={}):
+    def update(self, table=None, data=None, filters=None):
         """Updates rows where filters apply with, given data"""
+        if data is None:
+            data = {}
+        if filters is None:
+            filters = {}
         if table is not None:
             values = []
             data = self._keys_to_sql(data, sep=', ')
-            values = self.tempValues
+            values = self.temp_values
             if filters:
                 filters = ' WHERE ' + str(self._keys_to_sql(filters))
-                values = values + self.tempValues
+                values = values + self.temp_values
             else:
                 filters = ''
             sql = 'UPDATE ' + table + ' SET ' + data + filters
             self.connect()
             try:
                 self.cursor.execute(sql, values)
-            except sqlite3.OperationalError as e:
+            except sqlite3.OperationalError as error:
                 self.conn.rollback()
-                del self.tempValues
-                return 'SQL Error: %s' % e
+                del self.temp_values
+                return 'SQL Error: %s' % error
             else:
-                del self.tempValues
-                #self.lastInsertId = self.cursor.lastrowid()
+                del self.temp_values
+                #self.last_insert_id = self.cursor.lastrowid()
                 self.conn.commit()
                 self.cursor.close()
                 return True
         else:
             raise NameError('Table not specified!')
     
-    def delete(self, table=None, filters={}):
+    def delete(self, table=None, filters=None):
         """Deletes rows where given filters apply"""
+        if filters is None:
+            filters = {}
         if table is not None:
             filters = self._keys_to_sql(filters)
             sql = 'DELETE FROM ' + table + ' WHERE ' + filters
             self.connect()
             try:
-                self.cursor.execute(sql, self.tempValues)
-            except sqlite3.OperationalError as e:
+                self.cursor.execute(sql, self.temp_values)
+            except sqlite3.OperationalError as error:
                 self.conn.rollback()
-                del self.tempValues
-                return 'SQL Error: %s' % e
+                del self.temp_values
+                return 'SQL Error: %s' % error
             else:
-                del self.tempValues
+                del self.temp_values
                 self.conn.commit()
                 self.cursor.close()
                 return True
         else:
             raise NameError('Table not specified!')
-    
-    def last_insert_id(self):
-        """Gets the id from the last database insert"""
-        if self.lastInsertId:
-            pass
-        else:
-            self.lastInsertId = False
-        return self.lastInsertId
     
     def count(self, table=None, filters=None):
         """Counts the rows based on the given filters"""
@@ -239,18 +270,24 @@ class Database(threading.Thread):
             sql = 'SELECT * FROM ' + table + ' WHERE ' + self._keys_to_sql(filters)
             self.connect()
             try:
-                self.cursor.execute(sql, self.tempValues)
-            except sqlite3.OperationalError as e:
+                self.cursor.execute(sql, self.temp_values)
+            except sqlite3.OperationalError as error:
                 self.conn.rollback()
-                del self.tempValues
-                return 'SQL Error: %s' % e
+                del self.temp_values
+                return 'SQL Error: %s' % error
             else:
                 # Cleanup and return
-                del self.tempValues
+                del self.temp_values
                 count = self.cursor.rowcount()
-                self.cusor.close()
+                self.cursor.close()
                 if count < 0 or count is None:
                     count = 0
                 return count
         else:
             raise NameError('Table not specified!')
+
+def write(text):
+    """Handle the output from the IRC bot"""
+    text = str(text) + "\n"
+    sys.stdout.write(text)
+    sys.stdout.flush()
