@@ -44,13 +44,17 @@ class Database(threading.Thread):
             raise NameError('No database type or name specified!')
         if dbserver is not None:
             self.dbserver = dbserver
-        try:
-            self.user = creden['username']
-        except KeyError:
+        if creden is not None:
+            try:
+                self.user = creden['username']
+            except KeyError:
+                self.user = None
+            try:
+                self.passwd = creden['password']
+            except KeyError:
+                self.passwd = None
+        else:
             self.user = None
-        try:
-            self.passwd = creden['password']
-        except KeyError:
             self.passwd = None
         self.temp_values = None
         self.temp_insert_values = None
