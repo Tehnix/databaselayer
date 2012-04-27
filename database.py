@@ -31,7 +31,7 @@ class Database(threading.Thread):
     Provides a database abstraction layer, for easy use with
     multiple different database types, without the need to
     think about SQL differences.
-
+    
     """
     
     def __init__(self, dbtype=None, dbname=None, dbserver=None, creden=None):
@@ -64,7 +64,7 @@ class Database(threading.Thread):
     
     def connect(self):
         """Make the connection based on the type of database.
-
+        
         Types allowed:
             SQLite
             MySQL
@@ -127,7 +127,7 @@ class Database(threading.Thread):
         Arg [out] specifies what the output should be:
             none   : do nothing here (simply return)
             output : send output to stdout
-
+        
         """
         if filters is None:
             filters = {}
@@ -161,7 +161,7 @@ class Database(threading.Thread):
         Arg [out] specifies what the output should be:
             none   : do nothing here (simply return)
             output : send output to stdout
-
+        
         """
         if filters is None:
             filters = {}
@@ -189,32 +189,50 @@ class Database(threading.Thread):
         else:
             raise NameError('Table not specified!')
     
-    def insert(self, table=None, data=None):
-        """Inserts specified data into the database"""
+    def insert(self, table=None, data=None, out=None):
+        """
+        Inserts specified data into the database
+        
+        Arg [out] specifies what the output should be:
+            none   : do nothing here (simply return)
+            output : send output to stdout
+        
+        """
         if data is None:
             data = {}
         if table is not None:
             sql = 'INSERT INTO ' + table + self._keys_to_insert_sql(data)
             self.connect()
             try:
-                print(sql)
-                print(self.temp_insert_values)
                 self.cursor.execute(sql, self.temp_insert_values)
             except sqlite3.OperationalError as error:
                 self.conn.rollback()
                 del self.temp_insert_values
+                if out == 'output':
+                    write("Error running SQL: %s" % (sql,))
                 return 'SQL Error: %s' % error
             else:
+                if out == 'output':
+                    write("Successfully ran: %s" % (sql,))
+                    write("With data       : %s" % (self.temp_insert_values,))
                 del self.temp_insert_values
-                #self.last_insert_id = self.cursor.lastrowid()
+                # TODO Fix the last insert id
+                # self.last_insert_id = self.cursor.lastrowid()
                 self.conn.commit()
                 self.cursor.close()
                 return True
         else:
             raise NameError('Table not specified!')
     
-    def update(self, table=None, data=None, filters=None):
-        """Updates rows where filters apply with, given data"""
+    def update(self, table=None, data=None, filters=None, out=None):
+        """
+        Updates rows where filters apply with, given data
+        
+        Arg [out] specifies what the output should be:
+            none   : do nothing here (simply return)
+            output : send output to stdout
+        
+        """
         if data is None:
             data = {}
         if filters is None:
@@ -235,10 +253,15 @@ class Database(threading.Thread):
             except sqlite3.OperationalError as error:
                 self.conn.rollback()
                 del self.temp_values
+                if out == 'output':
+                    write("Error running SQL: %s" % (sql,))
                 return 'SQL Error: %s' % error
             else:
+                if out == 'output':
+                    write("Successfully ran: %s" % (sql,))
                 del self.temp_values
-                #self.last_insert_id = self.cursor.lastrowid()
+                # TODO Fix the last insert id
+                # self.last_insert_id = self.cursor.lastrowid()
                 self.conn.commit()
                 self.cursor.close()
                 return True
