@@ -86,7 +86,7 @@ class Database(threading.Thread):
             keys = {}
         filters = []
         self.temp_values = ()
-        for field, value in keys.items():
+        for field, value in list(keys.items()):
             filters.append("%s = ? " % field)
             self.temp_values = self.temp_values + (value,)
         return sep.join(filters)
@@ -98,7 +98,7 @@ class Database(threading.Thread):
         fields = []
         values = []
         self.temp_insert_values = ()
-        for field, value in keys.items():
+        for field, value in list(keys.items()):
             fields.append(field)
             values.append('?')
             self.temp_insert_values = self.temp_insert_values + (value,)
