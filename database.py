@@ -4,6 +4,22 @@
 Database abstraction layer. Simplyfies database
 handling a bit.
 
+An example of common usecase could be as such:
+
+# Import the module
+from databaselayer import database
+
+# Create the database
+myDB = database.Database('SQLite', 'database.sql')
+# Create a table
+myDB.execute(
+    'CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT)'
+)
+# Insert a few people in the users table
+myDB.insert('users', {'username': 'John'})
+myDB.insert('users', {'username': 'Tom'})
+
+
 """
 
 import threading
@@ -26,11 +42,20 @@ except ImportError:
 
 
 class Database(threading.Thread):
-    """Higher level database abstraction layer.
+    """
+    Higher level database abstraction layer.
     
     Provides a database abstraction layer, for easy use with
     multiple different database types, without the need to
-    think about SQL differences.
+    think about SQL differences. If you want to execute raw SQL, 
+    you can use the execute method.
+    
+    Throughout the class, a lot of methods take in a filter argument. 
+    The filter is in the format of {'field': 'value'}. The data
+    argument follows the same syntax.
+    
+    The add argument is to add additional raw SQL to a constructed 
+    query (e.g. add="ORDER BY time").
     
     """
     
